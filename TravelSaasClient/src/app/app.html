@@ -1,0 +1,7 @@
+<div class="app-layout">
+  <app-navbar *ngIf="!isPublicRoute()"></app-navbar>
+  <main class="main-viewport">
+    <router-outlet></router-outlet>
+  </main>
+  <app-toast></app-toast>
+</div>

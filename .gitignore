@@ -1,0 +1,47 @@
+# ==============================================================================
+# TRAVELSAAS — GITIGNORE CONFIGURATION
+# ==============================================================================
+
+# PostgreSQL local data directory
+pgdata/
+*.log
+
+# .NET / C# Build Outputs
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+.dotnet/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Angular / Node.js
+node_modules/
+TravelSaasClient/node_modules/
+TravelSaasClient/.angular/
+TravelSaasClient/dist/
+dist/
+.npm/
+
+# Local Database & Uploads
+*.db
+*.db-shm
+*.db-wal
+travelsaas.db*
+uploads/
+
+# Environment and Secret Files (keep .env.example)
+.env
+.env.local
+.env.*.local
+appsettings.*.local.json
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

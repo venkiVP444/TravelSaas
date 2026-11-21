@@ -1,0 +1,56 @@
+namespace TravelSaas.Api.DTOs;
+
+public record MemberDto(
+    Guid Id,
+    string MemberCode,
+    string FullName,
+    string Email,
+    string MobileNo,
+    string? AadhaarNo,
+    string? LicenseNo,
+    DateTime? DateOfBirth,
+    int Age,
+    string Gender,
+    string BloodGroup,
+    string FoodInfo,
+    string Role,
+    string WorkType,
+    string ContractPeriod,
+    DateTime WorkJoinDate,
+    DateTime? WorkEndDate,
+    string SalaryPeriod,
+    string? Address,
+    string? PhotoUrl,
+    string? DocumentUrl,
+    string Status,
+    string CustomFieldsJson,
+    int TripsAttemptCount,
+    decimal TotalEarnings,
+    decimal TotalBalance
+);
+
+public record CreateMemberRequest(
+    string? MemberCode,
+    string FullName,
+    string Email,
+    string MobileNo,
+    string? AadhaarNo,
+    string? LicenseNo,
+    DateTime? DateOfBirth,
+    int Age,
+    string Gender,
+    string BloodGroup,
+    string FoodInfo,
+    string Role,
+    string WorkType,
+    string ContractPeriod,
+    DateTime WorkJoinDate,
+    DateTime? WorkEndDate,
+    string SalaryPeriod,
+    string? Address,
+    string? PhotoUrl,
+    string? DocumentUrl,
+    string? Status,
+    string? CustomFieldsJson
+);
+
