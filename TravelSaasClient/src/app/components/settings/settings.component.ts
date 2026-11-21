@@ -937,7 +937,7 @@ export class SettingsComponent implements OnInit {
   }
 
   switchTenant(tenant: { id: string; name: string }) {
-    this.auth.switchTenant({ id: tenant.id, name: tenant.name, slug: tenant.name.toLowerCase() });
+    this.auth.setTenant({ id: tenant.id, name: tenant.name, slug: tenant.name.toLowerCase() });
     this.toast.success(`Switched tenant context to ${tenant.name}.`);
     this.loadCustomFields();
     this.loadResourceTypes();

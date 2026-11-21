@@ -222,6 +222,7 @@ export interface ResourceItem {
   resourceTypeId: string;
   resourceTypeKey: string;
   resourceTypeName: string;
+  resourceType?: string;
   code: string;
   name: string;
   identificationNo?: string;

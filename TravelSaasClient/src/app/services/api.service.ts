@@ -226,15 +226,13 @@ export class ApiService {
   }
 
   // Members
-  getMembers(params: { role?: string; search?: string; status?: string } = {}): Observable<MemberItem[]> {
+  getMembers(params: { role?: string; search?: string; status?: string }): Observable<MemberItem[]> {
     let httpParams = new HttpParams();
-    if (params) {
-      Object.entries(params).forEach(([key, val]) => {
-        if (val !== undefined && val !== null && val !== '') {
-          httpParams = httpParams.set(key, val.toString());
-        }
-      });
-    }
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        httpParams = httpParams.set(key, val.toString());
+      }
+    });
 
     return this.http.get<MemberItem[]>(`${this.baseUrl}/members`, {
       headers: this.getHeaders(),
