@@ -99,6 +99,12 @@ namespace TravelSaas.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DefaultValue")
+                        .HasColumnType("text");
+
                     b.Property<string>("FieldKey")
                         .IsRequired()
                         .HasColumnType("text");
@@ -111,6 +117,9 @@ namespace TravelSaas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsRequired")
                         .HasColumnType("boolean");
 
@@ -120,6 +129,9 @@ namespace TravelSaas.Api.Migrations
                     b.Property<bool>("ShowInTable")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
                     b.Property<string>("TargetEntity")
                         .IsRequired()
                         .HasColumnType("text");
@@ -127,7 +139,16 @@ namespace TravelSaas.Api.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ValidationRulesJson")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TargetEntity", "FieldKey")
+                        .IsUnique();
 
                     b.ToTable("CustomFieldDefinitions");
                 });
@@ -511,6 +532,10 @@ namespace TravelSaas.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CustomFieldsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
@@ -585,6 +610,35 @@ namespace TravelSaas.Api.Migrations
                     b.ToTable("Trips");
                 });
 
+            modelBuilder.Entity("TravelSaas.Api.Domain.Entities.TripItineraryDay", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("DayDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DayNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TripId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TripId");
+
+                    b.ToTable("TripItineraryDays");
+                });
+
             modelBuilder.Entity("TravelSaas.Api.Domain.Entities.TripItinerarySchedule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -595,14 +649,39 @@ namespace TravelSaas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("ActivityType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("AssignedPersonResource")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("DayDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DayId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("DayNumber")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Destination")
+                        .HasColumnType("text");
+
                     b.Property<string>("Location")
                         .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Origin")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
@@ -616,6 +695,8 @@ namespace TravelSaas.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DayId");
+
                     b.HasIndex("TripId");
 
                     b.ToTable("TripItinerarySchedules");
@@ -626,6 +707,9 @@ namespace TravelSaas.Api.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<int>("Age")
+                        .HasColumnType("integer");
 
                     b.Property<string>("AgeGender")
                         .IsRequired()
@@ -639,10 +723,18 @@ namespace TravelSaas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CustomFieldsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("DropLocation")
                         .HasColumnType("text");
 
                     b.Property<string>("FoodInfo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Gender")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -808,8 +900,22 @@ namespace TravelSaas.Api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TravelSaas.Api.Domain.Entities.TripItineraryDay", b =>
+                {
+                    b.HasOne("TravelSaas.Api.Domain.Entities.Trip", null)
+                        .WithMany("Days")
+                        .HasForeignKey("TripId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TravelSaas.Api.Domain.Entities.TripItinerarySchedule", b =>
                 {
+                    b.HasOne("TravelSaas.Api.Domain.Entities.TripItineraryDay", null)
+                        .WithMany("Schedules")
+                        .HasForeignKey("DayId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("TravelSaas.Api.Domain.Entities.Trip", null)
                         .WithMany("Schedules")
                         .HasForeignKey("TripId")
@@ -874,6 +980,8 @@ namespace TravelSaas.Api.Migrations
 
             modelBuilder.Entity("TravelSaas.Api.Domain.Entities.Trip", b =>
                 {
+                    b.Navigation("Days");
+
                     b.Navigation("Payments");
 
                     b.Navigation("ResourceAssignments");
@@ -883,6 +991,11 @@ namespace TravelSaas.Api.Migrations
                     b.Navigation("TeamAssignments");
 
                     b.Navigation("Travellers");
+                });
+
+            modelBuilder.Entity("TravelSaas.Api.Domain.Entities.TripItineraryDay", b =>
+                {
+                    b.Navigation("Schedules");
                 });
 #pragma warning restore 612, 618
         }

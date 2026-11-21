@@ -258,6 +258,7 @@ import { TripDetail, MemberItem, ResourceItem } from '../../models/models';
                   <th>Paid Amount</th>
                   <th>Balance</th>
                   <th>Food Info</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -277,9 +278,12 @@ import { TripDetail, MemberItem, ResourceItem } from '../../models/models';
                   <td>₹{{ tr.paidAmount | number }}</td>
                   <td>₹{{ tr.balanceAmount | number }}</td>
                   <td>{{ tr.foodInfo }}</td>
+                  <td>
+                    <button class="del-sched-btn" (click)="deleteTraveller(tr.id!)" title="Remove Traveller">✕</button>
+                  </td>
                 </tr>
                 <tr *ngIf="!trip()?.travellers?.length">
-                  <td colspan="11" class="empty-cell">No travellers registered yet.</td>
+                  <td colspan="12" class="empty-cell">No travellers registered yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -374,13 +378,23 @@ import { TripDetail, MemberItem, ResourceItem } from '../../models/models';
             </div>
             <div class="form-row">
               <div class="form-field">
-                <label>Age & Gender</label>
-                <input type="text" [(ngModel)]="newTravellerAgeGender" placeholder="e.g. 32 / Male" />
+                <label>Age *</label>
+                <input type="number" [(ngModel)]="newTravellerAge" min="1" max="120" placeholder="28" />
               </div>
               <div class="form-field">
-                <label>Contact Phone</label>
-                <input type="text" [(ngModel)]="newTravellerContact" placeholder="+91 9876543210" />
+                <label>Gender *</label>
+                <select [(ngModel)]="newTravellerGender">
+                  <option value="Female">Female</option>
+                  <option value="Male">Male</option>
+                  <option value="Non-Binary">Non-Binary</option>
+                  <option value="Other">Other</option>
+                  <option value="Prefer not to say">Prefer not to say</option>
+                </select>
               </div>
+            </div>
+            <div class="form-field">
+              <label>Contact Phone</label>
+              <input type="text" [(ngModel)]="newTravellerContact" placeholder="+91 9876543210" />
             </div>
             <div class="form-row">
               <div class="form-field">
@@ -905,7 +919,8 @@ export class TripDetailsComponent implements OnInit {
   // Add Traveller Modal
   showTravellerModal = false;
   newTravellerName = '';
-  newTravellerAgeGender = '28 / Male';
+  newTravellerAge = 28;
+  newTravellerGender = 'Female';
   newTravellerContact = '';
   newTravellerPickup = '';
   newTravellerDrop = '';
@@ -1006,7 +1021,11 @@ export class TripDetailsComponent implements OnInit {
 
   openAddTravellerModal() {
     this.newTravellerName = '';
+    this.newTravellerAge = 28;
+    this.newTravellerGender = 'Female';
     this.newTravellerContact = '';
+    this.newTravellerPickup = '';
+    this.newTravellerDrop = '';
     this.newTravellerPaid = this.trip()?.adultPrice || 0;
     this.showTravellerModal = true;
   }
@@ -1019,25 +1038,42 @@ export class TripDetailsComponent implements OnInit {
     }
 
     const payload = {
-      travellerName: this.newTravellerName,
-      ageGender: this.newTravellerAgeGender,
-      contact: this.newTravellerContact,
+      travellerName: this.newTravellerName.trim(),
+      age: Number(this.newTravellerAge) || 28,
+      gender: this.newTravellerGender || 'Female',
+      contact: this.newTravellerContact.trim(),
       type: 'Main',
-      pickupLocation: this.newTravellerPickup,
-      dropLocation: this.newTravellerDrop,
+      pickupLocation: this.newTravellerPickup.trim(),
+      dropLocation: this.newTravellerDrop.trim(),
       paymentStatus: 'Paid',
-      paidAmount: this.newTravellerPaid,
+      paidAmount: Number(this.newTravellerPaid) || 0,
       balanceAmount: 0,
       foodInfo: this.newTravellerFood
     };
 
     this.api.addTraveller(t.id, payload).subscribe({
       next: () => {
-        this.toast.success('Traveller added to trip.');
+        this.toast.success('Traveller added to trip successfully.');
         this.showTravellerModal = false;
         this.loadTrip(t.id);
+      },
+      error: (err) => {
+        this.toast.error(err.error?.message || 'Failed to add traveller.');
       }
     });
+  }
+
+  deleteTraveller(travellerId: string) {
+    const t = this.trip();
+    if (!t) return;
+    if (confirm('Are you sure you want to remove this traveller?')) {
+      this.api.deleteTraveller(t.id, travellerId).subscribe({
+        next: () => {
+          this.toast.success('Traveller removed.');
+          this.loadTrip(t.id);
+        }
+      });
+    }
   }
 
   openAssignTeamModal() {

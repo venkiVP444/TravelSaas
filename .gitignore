@@ -45,3 +45,4 @@ appsettings.*.local.json
 *.swo
 .DS_Store
 Thumbs.db
+

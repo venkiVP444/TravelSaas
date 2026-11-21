@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -32,13 +33,8 @@ public class TripsController : ControllerBase
         [FromQuery] string? category,
         [FromQuery] string? search,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string sortBy = "CreatedAt",
-        [FromQuery] bool sortDesc = true)
+        [FromQuery] int pageSize = 10)
     {
-        page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 100);
-
         var tenantId = _tenantService.GetCurrentTenantId();
         var query = _context.Trips.Where(t => t.TenantId == tenantId);
 
@@ -69,31 +65,23 @@ public class TripsController : ControllerBase
             query = query.Where(t => t.Category.ToLower() == category.ToLower());
         }
 
-        // Search
+        // Universal Search
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.ToLower();
-            query = query.Where(t => t.Name.ToLower().Contains(s) ||
-                                     t.TripCode.ToLower().Contains(s) ||
-                                     t.Origin.ToLower().Contains(s) ||
-                                     t.Destination.ToLower().Contains(s));
+            query = query.Where(t =>
+                t.Name.ToLower().Contains(s) ||
+                t.TripCode.ToLower().Contains(s) ||
+                t.Origin.ToLower().Contains(s) ||
+                t.Destination.ToLower().Contains(s) ||
+                t.Category.ToLower().Contains(s)
+            );
         }
 
         var totalCount = await query.CountAsync();
 
-        // Sorting
-        query = (sortBy.ToLower(), sortDesc) switch
-        {
-            ("name", false) => query.OrderBy(t => t.Name),
-            ("name", true) => query.OrderByDescending(t => t.Name),
-            ("tripcode", false) => query.OrderBy(t => t.TripCode),
-            ("tripcode", true) => query.OrderByDescending(t => t.TripCode),
-            ("startdatetime", false) => query.OrderBy(t => t.StartDateTime),
-            ("startdatetime", true) => query.OrderByDescending(t => t.StartDateTime),
-            _ => sortDesc ? query.OrderByDescending(t => t.CreatedAt) : query.OrderBy(t => t.CreatedAt)
-        };
-
         var items = await query
+            .OrderByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(t => new TripListDto(
@@ -125,6 +113,8 @@ public class TripsController : ControllerBase
     {
         var tenantId = _tenantService.GetCurrentTenantId();
         var trip = await _context.Trips
+            .Include(t => t.Days)
+                .ThenInclude(d => d.Schedules)
             .Include(t => t.Schedules)
             .Include(t => t.Travellers)
             .Include(t => t.TeamAssignments)
@@ -144,16 +134,98 @@ public class TripsController : ControllerBase
         var totalExpenses = trip.BookedSeats * trip.AdultSpends;
         var totalProfit = totalIncome - totalExpenses;
 
-        var scheduleDtos = trip.Schedules
+        // Build Itinerary Days with schedules
+        var dayDtos = new List<TripItineraryDayDto>();
+        if (trip.Days != null && trip.Days.Any())
+        {
+            dayDtos = trip.Days
+                .OrderBy(d => d.DayNumber)
+                .Select(d => new TripItineraryDayDto(
+                    d.Id,
+                    d.DayNumber,
+                    d.Title,
+                    d.DayDate,
+                    d.Schedules.OrderBy(s => s.TimeString).Select(s => new TripScheduleDto(
+                        s.Id,
+                        s.DayId,
+                        s.DayNumber,
+                        s.DayDate,
+                        s.TimeString,
+                        s.Activity,
+                        s.Description,
+                        s.Origin,
+                        s.Destination,
+                        s.ActivityType,
+                        s.Status.ToString(),
+                        s.AssignedPersonResource,
+                        s.Notes,
+                        s.Location
+                    )).ToList()
+                ))
+                .ToList();
+        }
+        else if (trip.Schedules != null && trip.Schedules.Any())
+        {
+            // Backward-compatible grouping if days table wasn't previously populated
+            var grouped = trip.Schedules
+                .GroupBy(s => s.DayNumber)
+                .OrderBy(g => g.Key);
+
+            foreach (var g in grouped)
+            {
+                var first = g.First();
+                dayDtos.Add(new TripItineraryDayDto(
+                    Guid.NewGuid(),
+                    g.Key,
+                    $"Day {g.Key}",
+                    first.DayDate,
+                    g.OrderBy(s => s.TimeString).Select(s => new TripScheduleDto(
+                        s.Id,
+                        s.DayId,
+                        s.DayNumber,
+                        s.DayDate,
+                        s.TimeString,
+                        s.Activity,
+                        s.Description,
+                        s.Origin,
+                        s.Destination,
+                        s.ActivityType,
+                        s.Status.ToString(),
+                        s.AssignedPersonResource,
+                        s.Notes,
+                        s.Location
+                    )).ToList()
+                ));
+            }
+        }
+
+        var allSchedules = trip.Schedules
             .OrderBy(s => s.DayNumber)
             .ThenBy(s => s.TimeString)
-            .Select(s => new TripScheduleDto(s.Id, s.DayNumber, s.DayDate, s.TimeString, s.Activity, s.Location))
+            .Select(s => new TripScheduleDto(
+                s.Id,
+                s.DayId,
+                s.DayNumber,
+                s.DayDate,
+                s.TimeString,
+                s.Activity,
+                s.Description,
+                s.Origin,
+                s.Destination,
+                s.ActivityType,
+                s.Status.ToString(),
+                s.AssignedPersonResource,
+                s.Notes,
+                s.Location
+            ))
             .ToList();
 
         var travellerDtos = trip.Travellers
             .Select(tr => new TripTravellerDto(
                 tr.Id,
                 tr.TravellerName,
+                tr.Age,
+                tr.Gender,
                 tr.AgeGender,
                 tr.Contact,
                 tr.Type,
@@ -162,7 +234,8 @@ public class TripsController : ControllerBase
                 tr.PaymentStatus.ToString(),
                 tr.PaidAmount,
                 tr.BalanceAmount,
-                tr.FoodInfo
+                tr.FoodInfo,
+                tr.CustomFieldsJson ?? "{}"
             ))
             .ToList();
 
@@ -194,6 +267,9 @@ public class TripsController : ControllerBase
                 ra.Notes
             ))
             .ToList();
+
+        var assignedMemberIds = trip.TeamAssignments.Select(ta => ta.MemberId).ToList();
+        var assignedResourceIds = trip.ResourceAssignments.Select(ra => ra.ResourceId).ToList();
 
         var detail = new TripDetailDto(
             trip.Id,
@@ -227,10 +303,14 @@ public class TripsController : ControllerBase
             trip.PublicSlug,
             trip.PublishedAt,
             trip.CreatedAt,
-            scheduleDtos,
+            trip.CustomFieldsJson ?? "{}",
+            dayDtos,
+            allSchedules,
             travellerDtos,
             teamDtos,
-            resourceDtos
+            resourceDtos,
+            assignedMemberIds,
+            assignedResourceIds
         );
 
         return Ok(detail);
@@ -259,16 +339,23 @@ public class TripsController : ControllerBase
             tripCode = $"#{count:D4}";
         }
 
+        // Determine Trip Status: Preserves explicit 'Draft' or user-selected lifecycle status!
+        var status = TripStatus.Draft;
+        if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<TripStatus>(request.Status, true, out var parsedStatus))
+        {
+            status = parsedStatus;
+        }
+
         var trip = new Trip
         {
             TenantId = tenantId,
             TripCode = tripCode,
-            Name = request.Name,
+            Name = request.Name.Trim(),
             Description = request.Description,
             ThumbnailUrl = request.ThumbnailUrl,
             Category = request.Category ?? "Family Trip",
-            Origin = request.Origin,
-            Destination = request.Destination,
+            Origin = request.Origin?.Trim() ?? string.Empty,
+            Destination = request.Destination?.Trim() ?? string.Empty,
             Via = request.Via,
             StartDateTime = request.StartDateTime,
             EndDateTime = request.EndDateTime,
@@ -283,22 +370,110 @@ public class TripsController : ControllerBase
             ChildPrice = request.ChildPrice,
             ChildSpends = request.ChildSpends,
             ChildMargin = request.ChildMargin > 0 ? request.ChildMargin : (request.ChildPrice - request.ChildSpends),
-            Status = TripStatus.Upcoming
+            Status = status,
+            CustomFieldsJson = request.CustomFieldsJson ?? "{}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
+
+        // Populate Days and Schedules
+        if (request.Days != null && request.Days.Any())
+        {
+            foreach (var d in request.Days)
+            {
+                var dayEntity = new TripItineraryDay
+                {
+                    Id = d.Id ?? Guid.NewGuid(),
+                    TenantId = tenantId,
+                    TripId = trip.Id,
+                    DayNumber = d.DayNumber,
+                    Title = string.IsNullOrWhiteSpace(d.Title) ? $"Day {d.DayNumber}" : d.Title,
+                    DayDate = (d.DayDate.HasValue && d.DayDate.Value != default) ? d.DayDate.Value : request.StartDateTime.AddDays(d.DayNumber - 1)
+                };
+                trip.Days.Add(dayEntity);
+            }
+        }
 
         if (request.Schedules != null && request.Schedules.Any())
         {
             foreach (var s in request.Schedules)
             {
-                trip.Schedules.Add(new TripItinerarySchedule
+                var schedStatus = ScheduleStatus.Scheduled;
+                if (!string.IsNullOrWhiteSpace(s.Status) && Enum.TryParse<ScheduleStatus>(s.Status, true, out var parsedSchedStatus))
                 {
+                    schedStatus = parsedSchedStatus;
+                }
+
+                // Associate with Day if possible
+                Guid? targetDayId = s.DayId;
+                if (!targetDayId.HasValue && trip.Days.Any())
+                {
+                    var matchingDay = trip.Days.FirstOrDefault(d => d.DayNumber == s.DayNumber);
+                    if (matchingDay != null)
+                    {
+                        targetDayId = matchingDay.Id;
+                    }
+                }
+
+                var sched = new TripItinerarySchedule
+                {
+                    Id = s.Id ?? Guid.NewGuid(),
                     TenantId = tenantId,
+                    TripId = trip.Id,
+                    DayId = targetDayId,
                     DayNumber = s.DayNumber,
-                    DayDate = s.DayDate,
-                    TimeString = s.TimeString,
-                    Activity = s.Activity,
+                    DayDate = (s.DayDate.HasValue && s.DayDate.Value != default) ? s.DayDate.Value : trip.StartDateTime.AddDays(Math.Max(0, s.DayNumber - 1)),
+                    TimeString = !string.IsNullOrWhiteSpace(s.TimeString) ? s.TimeString.Trim() : (!string.IsNullOrWhiteSpace(s.Time) ? s.Time.Trim() : "10:00 AM"),
+                    Activity = !string.IsNullOrWhiteSpace(s.Activity) ? s.Activity.Trim() : (!string.IsNullOrWhiteSpace(s.ActivityTitle) ? s.ActivityTitle.Trim() : "Sightseeing"),
+                    Description = s.Description,
+                    Origin = s.Origin,
+                    Destination = s.Destination,
+                    ActivityType = s.ActivityType ?? "Sightseeing",
+                    Status = schedStatus,
+                    AssignedPersonResource = s.AssignedPersonResource,
+                    Notes = s.Notes,
                     Location = s.Location
-                });
+                };
+
+                trip.Schedules.Add(sched);
+            }
+        }
+
+        // Team Assignments
+        if (request.AssignedMemberIds != null)
+        {
+            foreach (var mId in request.AssignedMemberIds.Distinct())
+            {
+                var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == mId && m.TenantId == tenantId);
+                if (member != null)
+                {
+                    trip.TeamAssignments.Add(new TripTeamAssignment
+                    {
+                        TenantId = tenantId,
+                        TripId = trip.Id,
+                        MemberId = member.Id,
+                        AssignedRole = member.Role
+                    });
+                }
+            }
+        }
+
+        // Resource Assignments
+        if (request.AssignedResourceIds != null)
+        {
+            foreach (var rId in request.AssignedResourceIds.Distinct())
+            {
+                var resource = await _context.Resources.FirstOrDefaultAsync(r => r.Id == rId && r.TenantId == tenantId);
+                if (resource != null)
+                {
+                    trip.ResourceAssignments.Add(new TripResourceAssignment
+                    {
+                        TenantId = tenantId,
+                        TripId = trip.Id,
+                        ResourceId = resource.Id,
+                        Notes = resource.Name
+                    });
+                }
             }
         }
 
@@ -312,7 +487,7 @@ public class TripsController : ControllerBase
             Action = "Create",
             EntityType = "Trip",
             EntityId = trip.Id,
-            Description = $"Created trip {trip.Name} ({trip.TripCode})",
+            Description = $"Created trip {trip.Name} ({trip.TripCode}) with status {trip.Status}",
             Timestamp = DateTime.UtcNow
         });
 
@@ -326,25 +501,32 @@ public class TripsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult> UpdateTrip(Guid id, [FromBody] CreateTripRequest request)
     {
-        var trip = await _context.Trips.Include(t => t.Schedules).FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips
+            .Include(t => t.Days)
+            .Include(t => t.Schedules)
+            .Include(t => t.TeamAssignments)
+            .Include(t => t.ResourceAssignments)
+            .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
+
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
         }
 
-        trip.Name = request.Name;
+        trip.Name = request.Name.Trim();
         trip.Description = request.Description;
         trip.ThumbnailUrl = request.ThumbnailUrl;
-        trip.Category = request.Category;
-        trip.Origin = request.Origin;
-        trip.Destination = request.Destination;
+        trip.Category = request.Category ?? trip.Category;
+        trip.Origin = request.Origin?.Trim() ?? trip.Origin;
+        trip.Destination = request.Destination?.Trim() ?? trip.Destination;
         trip.Via = request.Via;
         trip.StartDateTime = request.StartDateTime;
         trip.EndDateTime = request.EndDateTime;
-        trip.Duration = request.Duration;
+        trip.Duration = request.Duration ?? trip.Duration;
         trip.TotalSeats = request.TotalSeats;
-        trip.FoodInfo = request.FoodInfo;
-        trip.PickupDrop = request.PickupDrop;
+        trip.FoodInfo = request.FoodInfo ?? trip.FoodInfo;
+        trip.PickupDrop = request.PickupDrop ?? trip.PickupDrop;
         trip.AdultPrice = request.AdultPrice;
         trip.AdultSpends = request.AdultSpends;
         trip.AdultMargin = request.AdultMargin;
@@ -353,58 +535,158 @@ public class TripsController : ControllerBase
         trip.ChildMargin = request.ChildMargin;
         trip.UpdatedAt = DateTime.UtcNow;
 
+        // Preserve current status unless explicitly changed in request
+        if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<TripStatus>(request.Status, true, out var parsedStatus))
+        {
+            trip.Status = parsedStatus;
+        }
+
+        if (request.CustomFieldsJson != null)
+        {
+            trip.CustomFieldsJson = request.CustomFieldsJson;
+        }
+
+        // Update Days if supplied
+        if (request.Days != null)
+        {
+            _context.TripItineraryDays.RemoveRange(trip.Days);
+            trip.Days.Clear();
+            foreach (var d in request.Days)
+            {
+                trip.Days.Add(new TripItineraryDay
+                {
+                    Id = d.Id ?? Guid.NewGuid(),
+                    TenantId = tenantId,
+                    TripId = trip.Id,
+                    DayNumber = d.DayNumber,
+                    Title = string.IsNullOrWhiteSpace(d.Title) ? $"Day {d.DayNumber}" : d.Title,
+                    DayDate = (d.DayDate.HasValue && d.DayDate.Value != default) ? d.DayDate.Value : trip.StartDateTime.AddDays(d.DayNumber - 1)
+                });
+            }
+        }
+
+        // Update Schedules if supplied
         if (request.Schedules != null)
         {
             _context.TripItinerarySchedules.RemoveRange(trip.Schedules);
             trip.Schedules.Clear();
             foreach (var s in request.Schedules)
             {
+                var schedStatus = ScheduleStatus.Scheduled;
+                if (!string.IsNullOrWhiteSpace(s.Status) && Enum.TryParse<ScheduleStatus>(s.Status, true, out var parsedSchedStatus))
+                {
+                    schedStatus = parsedSchedStatus;
+                }
+
+                Guid? dayId = s.DayId;
+                if (!dayId.HasValue && trip.Days.Any())
+                {
+                    var matchingDay = trip.Days.FirstOrDefault(d => d.DayNumber == s.DayNumber);
+                    if (matchingDay != null)
+                    {
+                        dayId = matchingDay.Id;
+                    }
+                }
+
                 trip.Schedules.Add(new TripItinerarySchedule
                 {
-                    TenantId = trip.TenantId,
+                    Id = s.Id ?? Guid.NewGuid(),
+                    TenantId = tenantId,
                     TripId = trip.Id,
+                    DayId = dayId,
                     DayNumber = s.DayNumber,
-                    DayDate = s.DayDate,
-                    TimeString = s.TimeString,
-                    Activity = s.Activity,
+                    DayDate = (s.DayDate.HasValue && s.DayDate.Value != default) ? s.DayDate.Value : trip.StartDateTime.AddDays(Math.Max(0, s.DayNumber - 1)),
+                    TimeString = !string.IsNullOrWhiteSpace(s.TimeString) ? s.TimeString.Trim() : (!string.IsNullOrWhiteSpace(s.Time) ? s.Time.Trim() : "10:00 AM"),
+                    Activity = !string.IsNullOrWhiteSpace(s.Activity) ? s.Activity.Trim() : (!string.IsNullOrWhiteSpace(s.ActivityTitle) ? s.ActivityTitle.Trim() : "Sightseeing"),
+                    Description = s.Description,
+                    Origin = s.Origin,
+                    Destination = s.Destination,
+                    ActivityType = s.ActivityType ?? "Sightseeing",
+                    Status = schedStatus,
+                    AssignedPersonResource = s.AssignedPersonResource,
+                    Notes = s.Notes,
                     Location = s.Location
                 });
             }
         }
 
+        // Update Team Assignments if supplied
+        if (request.AssignedMemberIds != null)
+        {
+            _context.TripTeamAssignments.RemoveRange(trip.TeamAssignments);
+            trip.TeamAssignments.Clear();
+            foreach (var mId in request.AssignedMemberIds.Distinct())
+            {
+                var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == mId && m.TenantId == tenantId);
+                if (member != null)
+                {
+                    trip.TeamAssignments.Add(new TripTeamAssignment
+                    {
+                        TenantId = tenantId,
+                        TripId = trip.Id,
+                        MemberId = member.Id,
+                        AssignedRole = member.Role
+                    });
+                }
+            }
+        }
+
+        // Update Resource Assignments if supplied
+        if (request.AssignedResourceIds != null)
+        {
+            _context.TripResourceAssignments.RemoveRange(trip.ResourceAssignments);
+            trip.ResourceAssignments.Clear();
+            foreach (var rId in request.AssignedResourceIds.Distinct())
+            {
+                var res = await _context.Resources.FirstOrDefaultAsync(r => r.Id == rId && r.TenantId == tenantId);
+                if (res != null)
+                {
+                    trip.ResourceAssignments.Add(new TripResourceAssignment
+                    {
+                        TenantId = tenantId,
+                        TripId = trip.Id,
+                        ResourceId = res.Id,
+                        Notes = res.Name
+                    });
+                }
+            }
+        }
+
         await _context.SaveChangesAsync();
-        return Ok(new { message = "Trip updated successfully." });
+        var detailRes = await GetTripById(trip.Id);
+        var detail = (detailRes.Result as OkObjectResult)?.Value ?? detailRes.Value;
+        return Ok(detail);
     }
 
     [HttpPost("{id}/publish")]
     public async Task<ActionResult> PublishTrip(Guid id)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
         }
 
-        if (string.IsNullOrWhiteSpace(trip.Name) || string.IsNullOrWhiteSpace(trip.Destination))
+        if (string.IsNullOrWhiteSpace(trip.Name) || string.IsNullOrWhiteSpace(trip.Origin) || string.IsNullOrWhiteSpace(trip.Destination))
         {
-            return BadRequest(new { message = "Trip must have a Name and Destination to be published." });
+            return BadRequest(new { message = "Trip must have a valid Name, Origin, and Destination before publishing." });
         }
 
-        // Generate clean URL slug: e.g. kochi-to-munnar-family-trip-0001
         var baseSlug = trip.Name.ToLower()
             .Replace(" ", "-")
             .Replace("&", "and");
-        baseSlug = System.Text.RegularExpressions.Regex.Replace(baseSlug, @"[^a-z0-9\-]", "");
+        baseSlug = Regex.Replace(baseSlug, @"[^a-z0-9\-]", "");
         var slug = $"{baseSlug}-{trip.TripCode.Replace("#", "").ToLower()}";
 
         trip.IsPublished = true;
         trip.PublicSlug = slug;
         trip.PublishedAt = DateTime.UtcNow;
-        trip.Status = TripStatus.Active;
+        trip.Status = TripStatus.Upcoming; // Published active package ready for booking
 
         _context.ActivityLogs.Add(new ActivityLog
         {
-            TenantId = trip.TenantId,
+            TenantId = tenantId,
             UserName = "Current User",
             Action = "Publish",
             EntityType = "Trip",
@@ -426,33 +708,25 @@ public class TripsController : ControllerBase
     [HttpPost("{id}/unpublish")]
     public async Task<ActionResult> UnpublishTrip(Guid id)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
         }
 
         trip.IsPublished = false;
-
-        _context.ActivityLogs.Add(new ActivityLog
-        {
-            TenantId = trip.TenantId,
-            UserName = "Current User",
-            Action = "Unpublish",
-            EntityType = "Trip",
-            EntityId = trip.Id,
-            Description = $"Unpublished trip {trip.Name}",
-            Timestamp = DateTime.UtcNow
-        });
-
+        trip.Status = TripStatus.Draft;
         await _context.SaveChangesAsync();
-        return Ok(new { message = "Trip unpublished." });
+
+        return Ok(new { message = "Trip unpublished successfully. Public URL disabled." });
     }
 
     [HttpPut("{id}/status")]
     public async Task<ActionResult> UpdateStatus(Guid id, [FromBody] UpdateTripStatusRequest request)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
@@ -461,93 +735,323 @@ public class TripsController : ControllerBase
         if (Enum.TryParse<TripStatus>(request.Status, true, out var newStatus))
         {
             trip.Status = newStatus;
-            await _context.SaveChangesAsync();
-            return Ok(new { message = $"Status updated to {newStatus}" });
-        }
+            trip.UpdatedAt = DateTime.UtcNow;
 
-        return BadRequest(new { message = "Invalid status." });
-    }
-
-    [HttpPost("{id}/duplicate")]
-    public async Task<ActionResult> DuplicateTrip(Guid id)
-    {
-        var source = await _context.Trips.Include(t => t.Schedules).FirstOrDefaultAsync(t => t.Id == id);
-        if (source == null)
-        {
-            return NotFound(new { message = "Trip not found." });
-        }
-
-        var count = await _context.Trips.CountAsync() + 1;
-        var newCode = $"#{count:D4}";
-
-        var clone = new Trip
-        {
-            TenantId = source.TenantId,
-            TripCode = newCode,
-            Name = $"{source.Name} (Copy)",
-            Description = source.Description,
-            Category = source.Category,
-            Origin = source.Origin,
-            Destination = source.Destination,
-            Via = source.Via,
-            StartDateTime = source.StartDateTime.AddMonths(1),
-            EndDateTime = source.EndDateTime.AddMonths(1),
-            Duration = source.Duration,
-            TotalSeats = source.TotalSeats,
-            BookedSeats = 0,
-            FoodInfo = source.FoodInfo,
-            PickupDrop = source.PickupDrop,
-            AdultPrice = source.AdultPrice,
-            AdultSpends = source.AdultSpends,
-            AdultMargin = source.AdultMargin,
-            ChildPrice = source.ChildPrice,
-            ChildSpends = source.ChildSpends,
-            ChildMargin = source.ChildMargin,
-            Status = TripStatus.Draft
-        };
-
-        foreach (var s in source.Schedules)
-        {
-            clone.Schedules.Add(new TripItinerarySchedule
+            _context.ActivityLogs.Add(new ActivityLog
             {
-                TenantId = source.TenantId,
-                DayNumber = s.DayNumber,
-                DayDate = s.DayDate.AddMonths(1),
-                TimeString = s.TimeString,
-                Activity = s.Activity,
-                Location = s.Location
+                TenantId = tenantId,
+                UserName = "Current User",
+                Action = "StatusChange",
+                EntityType = "Trip",
+                EntityId = trip.Id,
+                Description = $"Changed trip {trip.Name} status to {newStatus}",
+                Timestamp = DateTime.UtcNow
             });
+
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Trip status updated successfully.", status = trip.Status.ToString() });
         }
 
-        _context.Trips.Add(clone);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Trip duplicated successfully.", newTripId = clone.Id });
+        return BadRequest(new { message = "Invalid status. Valid statuses: Draft, Upcoming, Active, Completed, Canceled, Archived." });
     }
 
-    [HttpPost("{id}/travellers")]
-    public async Task<ActionResult> AddTraveller(Guid id, [FromBody] TripMember traveller)
+    // =========================================================================
+    // ITINERARY DAY OPERATIONS (Add, Update, Delete, Reorder)
+    // =========================================================================
+    [HttpPost("{id}/days")]
+    public async Task<ActionResult<TripItineraryDayDto>> AddItineraryDay(Guid id, [FromBody] CreateDayItemRequest request)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.Include(t => t.Days).FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
         }
 
-        traveller.TenantId = trip.TenantId;
-        traveller.TripId = trip.Id;
+        var nextDayNum = trip.Days.Any() ? trip.Days.Max(d => d.DayNumber) + 1 : 1;
+        var dayNum = request.DayNumber > 0 ? request.DayNumber : nextDayNum;
+
+        var day = new TripItineraryDay
+        {
+            TenantId = tenantId,
+            TripId = trip.Id,
+            DayNumber = dayNum,
+            Title = string.IsNullOrWhiteSpace(request.Title) ? $"Day {dayNum}" : request.Title.Trim(),
+            DayDate = (request.DayDate.HasValue && request.DayDate.Value != default) ? request.DayDate.Value : trip.StartDateTime.AddDays(dayNum - 1)
+        };
+
+        _context.TripItineraryDays.Add(day);
+        await _context.SaveChangesAsync();
+
+        return Ok(new TripItineraryDayDto(day.Id, day.DayNumber, day.Title, day.DayDate, new List<TripScheduleDto>()));
+    }
+
+    [HttpDelete("{id}/days/{dayId}")]
+    public async Task<ActionResult> DeleteItineraryDay(Guid id, Guid dayId)
+    {
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var day = await _context.TripItineraryDays
+            .Include(d => d.Schedules)
+            .FirstOrDefaultAsync(d => d.Id == dayId && d.TripId == id && d.TenantId == tenantId);
+
+        if (day == null)
+        {
+            return NotFound(new { message = "Itinerary day not found." });
+        }
+
+        _context.TripItinerarySchedules.RemoveRange(day.Schedules);
+        _context.TripItineraryDays.Remove(day);
+
+        // Renumber remaining days sequentially
+        var remainingDays = await _context.TripItineraryDays
+            .Where(d => d.TripId == id && d.Id != dayId && d.TenantId == tenantId)
+            .OrderBy(d => d.DayNumber)
+            .ToListAsync();
+
+        for (int i = 0; i < remainingDays.Count; i++)
+        {
+            remainingDays[i].DayNumber = i + 1;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Itinerary day and its schedules deleted successfully." });
+    }
+
+    // =========================================================================
+    // INLINE SCHEDULE OPERATIONS (Add, Update, Delete)
+    // =========================================================================
+    [HttpPost("{id}/schedules")]
+    public async Task<ActionResult<TripScheduleDto>> AddSchedule(Guid id, [FromBody] CreateScheduleItemRequest request)
+    {
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.Include(t => t.Days).FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
+        if (trip == null)
+        {
+            return NotFound(new { message = "Trip not found." });
+        }
+
+        var activity = !string.IsNullOrWhiteSpace(request.Activity) ? request.Activity.Trim() : request.ActivityTitle?.Trim();
+        if (string.IsNullOrWhiteSpace(activity))
+        {
+            return BadRequest(new { message = "Activity title is required." });
+        }
+
+        var schedStatus = ScheduleStatus.Scheduled;
+        if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<ScheduleStatus>(request.Status, true, out var parsedStatus))
+        {
+            schedStatus = parsedStatus;
+        }
+
+        Guid? dayId = request.DayId;
+        if (!dayId.HasValue && trip.Days.Any())
+        {
+            var match = trip.Days.FirstOrDefault(d => d.DayNumber == request.DayNumber);
+            if (match != null) dayId = match.Id;
+        }
+
+        var schedule = new TripItinerarySchedule
+        {
+            TenantId = tenantId,
+            TripId = trip.Id,
+            DayId = dayId,
+            DayNumber = request.DayNumber,
+            DayDate = (request.DayDate.HasValue && request.DayDate.Value != default) ? request.DayDate.Value : trip.StartDateTime.AddDays(Math.Max(0, request.DayNumber - 1)),
+            TimeString = !string.IsNullOrWhiteSpace(request.TimeString) ? request.TimeString.Trim() : (!string.IsNullOrWhiteSpace(request.Time) ? request.Time.Trim() : "10:00 AM"),
+            Activity = activity,
+            Description = request.Description,
+            Origin = request.Origin,
+            Destination = request.Destination,
+            ActivityType = request.ActivityType ?? "Sightseeing",
+            Status = schedStatus,
+            AssignedPersonResource = request.AssignedPersonResource,
+            Notes = request.Notes,
+            Location = request.Location
+        };
+
+        _context.TripItinerarySchedules.Add(schedule);
+        await _context.SaveChangesAsync();
+
+        return Ok(new TripScheduleDto(
+            schedule.Id,
+            schedule.DayId,
+            schedule.DayNumber,
+            schedule.DayDate,
+            schedule.TimeString,
+            schedule.Activity,
+            schedule.Description,
+            schedule.Origin,
+            schedule.Destination,
+            schedule.ActivityType,
+            schedule.Status.ToString(),
+            schedule.AssignedPersonResource,
+            schedule.Notes,
+            schedule.Location
+        ));
+    }
+
+    [HttpPut("{id}/schedules/{scheduleId}")]
+    public async Task<ActionResult<TripScheduleDto>> UpdateSchedule(Guid id, Guid scheduleId, [FromBody] CreateScheduleItemRequest request)
+    {
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var schedule = await _context.TripItinerarySchedules.FirstOrDefaultAsync(s => s.Id == scheduleId && s.TripId == id && s.TenantId == tenantId);
+        if (schedule == null)
+        {
+            return NotFound(new { message = "Schedule item not found." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TimeString)) schedule.TimeString = request.TimeString.Trim();
+        if (!string.IsNullOrWhiteSpace(request.Activity)) schedule.Activity = request.Activity.Trim();
+        schedule.Description = request.Description;
+        schedule.Origin = request.Origin;
+        schedule.Destination = request.Destination;
+        if (!string.IsNullOrWhiteSpace(request.ActivityType)) schedule.ActivityType = request.ActivityType;
+        if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<ScheduleStatus>(request.Status, true, out var ps))
+        {
+            schedule.Status = ps;
+        }
+        schedule.AssignedPersonResource = request.AssignedPersonResource;
+        schedule.Notes = request.Notes;
+        schedule.Location = request.Location;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new TripScheduleDto(
+            schedule.Id,
+            schedule.DayId,
+            schedule.DayNumber,
+            schedule.DayDate,
+            schedule.TimeString,
+            schedule.Activity,
+            schedule.Description,
+            schedule.Origin,
+            schedule.Destination,
+            schedule.ActivityType,
+            schedule.Status.ToString(),
+            schedule.AssignedPersonResource,
+            schedule.Notes,
+            schedule.Location
+        ));
+    }
+
+    [HttpDelete("{id}/schedules/{scheduleId}")]
+    public async Task<ActionResult> DeleteSchedule(Guid id, Guid scheduleId)
+    {
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var schedule = await _context.TripItinerarySchedules.FirstOrDefaultAsync(s => s.Id == scheduleId && s.TripId == id && s.TenantId == tenantId);
+        if (schedule == null)
+        {
+            return NotFound(new { message = "Schedule item not found." });
+        }
+
+        _context.TripItinerarySchedules.Remove(schedule);
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Schedule item removed successfully." });
+    }
+
+    // =========================================================================
+    // TRAVELLER OPERATIONS (Add, Delete) - Structured Input & 400 Bad Request Fix!
+    // =========================================================================
+    [HttpPost("{id}/travellers")]
+    public async Task<ActionResult<TripTravellerDto>> AddTraveller(Guid id, [FromBody] AddTravellerRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.TravellerName))
+        {
+            return BadRequest(new { message = "Traveller Name is required." });
+        }
+
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
+        if (trip == null)
+        {
+            return NotFound(new { message = "Trip not found." });
+        }
+
+        var age = request.Age.GetValueOrDefault(28);
+        var gender = !string.IsNullOrWhiteSpace(request.Gender) ? request.Gender.Trim() : "Female";
+        var ageGender = $"{age} / {gender}";
+
+        var paymentStatus = PaymentStatus.Paid;
+        if (!string.IsNullOrWhiteSpace(request.PaymentStatus) && Enum.TryParse<PaymentStatus>(request.PaymentStatus, true, out var parsedPs))
+        {
+            paymentStatus = parsedPs;
+        }
+
+        var paidAmount = request.PaidAmount.GetValueOrDefault(trip.AdultPrice);
+        var balanceAmount = request.BalanceAmount.GetValueOrDefault(Math.Max(0, trip.AdultPrice - paidAmount));
+
+        var traveller = new TripMember
+        {
+            TenantId = tenantId,
+            TripId = trip.Id,
+            TravellerName = request.TravellerName.Trim(),
+            Age = age,
+            Gender = gender,
+            AgeGender = ageGender,
+            Contact = request.Contact?.Trim() ?? string.Empty,
+            Type = request.Type ?? "Main",
+            PickupLocation = request.PickupLocation?.Trim(),
+            DropLocation = request.DropLocation?.Trim(),
+            PaymentStatus = paymentStatus,
+            PaidAmount = paidAmount,
+            BalanceAmount = balanceAmount,
+            FoodInfo = request.FoodInfo ?? "Non-Veg",
+            CustomFieldsJson = request.CustomFieldsJson ?? "{}"
+        };
 
         _context.TripMembers.Add(traveller);
         trip.BookedSeats += 1;
 
         await _context.SaveChangesAsync();
-        return Ok(traveller);
+
+        return Ok(new TripTravellerDto(
+            traveller.Id,
+            traveller.TravellerName,
+            traveller.Age,
+            traveller.Gender,
+            traveller.AgeGender,
+            traveller.Contact,
+            traveller.Type,
+            traveller.PickupLocation,
+            traveller.DropLocation,
+            traveller.PaymentStatus.ToString(),
+            traveller.PaidAmount,
+            traveller.BalanceAmount,
+            traveller.FoodInfo,
+            traveller.CustomFieldsJson
+        ));
     }
 
+    [HttpDelete("{id}/travellers/{travellerId}")]
+    public async Task<ActionResult> DeleteTraveller(Guid id, Guid travellerId)
+    {
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
+        if (trip == null)
+        {
+            return NotFound(new { message = "Trip not found." });
+        }
+
+        var traveller = await _context.TripMembers.FirstOrDefaultAsync(m => m.Id == travellerId && m.TripId == id && m.TenantId == tenantId);
+        if (traveller == null)
+        {
+            return NotFound(new { message = "Traveller not found." });
+        }
+
+        _context.TripMembers.Remove(traveller);
+        trip.BookedSeats = Math.Max(0, trip.BookedSeats - 1);
+
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Traveller removed successfully." });
+    }
+
+    // =========================================================================
+    // TEAM & RESOURCE ASSIGNMENTS
+    // =========================================================================
     [HttpPost("{id}/team")]
     public async Task<ActionResult> AssignTeam(Guid id, [FromBody] TripTeamAssignment assignment)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
@@ -564,7 +1068,8 @@ public class TripsController : ControllerBase
     [HttpPost("{id}/resources")]
     public async Task<ActionResult> AssignResource(Guid id, [FromBody] TripResourceAssignment assignment)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
@@ -575,7 +1080,7 @@ public class TripsController : ControllerBase
 
         _context.TripResourceAssignments.Add(assignment);
 
-        var res = await _context.Resources.FirstOrDefaultAsync(r => r.Id == assignment.ResourceId);
+        var res = await _context.Resources.FirstOrDefaultAsync(r => r.Id == assignment.ResourceId && r.TenantId == tenantId);
         if (res != null)
         {
             res.CurrentTripId = trip.Id;
@@ -590,7 +1095,8 @@ public class TripsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<ActionResult> DeleteTrip(Guid id)
     {
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id);
+        var tenantId = _tenantService.GetCurrentTenantId();
+        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId);
         if (trip == null)
         {
             return NotFound(new { message = "Trip not found." });
@@ -604,7 +1110,9 @@ public class TripsController : ControllerBase
     [HttpGet("export")]
     public async Task<IActionResult> ExportTripsCsv()
     {
+        var tenantId = _tenantService.GetCurrentTenantId();
         var trips = await _context.Trips
+            .Where(t => t.TenantId == tenantId)
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
 

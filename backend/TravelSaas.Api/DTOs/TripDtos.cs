@@ -53,24 +53,46 @@ public record TripDetailDto(
     string? PublicSlug,
     DateTime? PublishedAt,
     DateTime CreatedAt,
+    string CustomFieldsJson,
+    List<TripItineraryDayDto> Days,
     List<TripScheduleDto> Schedules,
     List<TripTravellerDto> Travellers,
     List<TripTeamMemberDto> TeamMembers,
-    List<TripResourceDto> Resources
+    List<TripResourceDto> Resources,
+    List<Guid> AssignedTeamMemberIds,
+    List<Guid> AssignedResourceIds
+);
+
+public record TripItineraryDayDto(
+    Guid Id,
+    int DayNumber,
+    string Title,
+    DateTime DayDate,
+    List<TripScheduleDto> Schedules
 );
 
 public record TripScheduleDto(
     Guid Id,
+    Guid? DayId,
     int DayNumber,
     DateTime DayDate,
     string TimeString,
     string Activity,
+    string? Description,
+    string? Origin,
+    string? Destination,
+    string ActivityType,
+    string Status,
+    string? AssignedPersonResource,
+    string? Notes,
     string? Location
 );
 
 public record TripTravellerDto(
     Guid Id,
     string TravellerName,
+    int Age,
+    string Gender,
     string AgeGender,
     string Contact,
     string Type,
@@ -79,7 +101,8 @@ public record TripTravellerDto(
     string PaymentStatus,
     decimal PaidAmount,
     decimal BalanceAmount,
-    string FoodInfo
+    string FoodInfo,
+    string CustomFieldsJson
 );
 
 public record TripTeamMemberDto(
@@ -110,31 +133,69 @@ public record CreateTripRequest(
     string Name,
     string? Description,
     string? ThumbnailUrl,
-    string Category,
-    string Origin,
-    string Destination,
+    string? Category,
+    string? Origin,
+    string? Destination,
     string? Via,
     DateTime StartDateTime,
     DateTime EndDateTime,
-    string Duration,
+    string? Duration,
     int TotalSeats,
-    string FoodInfo,
-    string PickupDrop,
+    string? FoodInfo,
+    string? PickupDrop,
     decimal AdultPrice,
     decimal AdultSpends,
     decimal AdultMargin,
     decimal ChildPrice,
     decimal ChildSpends,
     decimal ChildMargin,
+    string? Status,
+    string? CustomFieldsJson,
+    List<Guid>? AssignedMemberIds,
+    List<Guid>? AssignedResourceIds,
+    List<CreateDayItemRequest>? Days,
     List<CreateScheduleItemRequest>? Schedules
 );
 
-public record CreateScheduleItemRequest(
+public record CreateDayItemRequest(
+    Guid? Id,
     int DayNumber,
-    DateTime DayDate,
-    string TimeString,
-    string Activity,
+    string? Title,
+    DateTime? DayDate
+);
+
+public record CreateScheduleItemRequest(
+    Guid? Id,
+    Guid? DayId,
+    int DayNumber,
+    DateTime? DayDate,
+    string? TimeString,
+    string? Time,
+    string? Activity,
+    string? ActivityTitle,
+    string? Description,
+    string? Origin,
+    string? Destination,
+    string? ActivityType,
+    string? Status,
+    string? AssignedPersonResource,
+    string? Notes,
     string? Location
+);
+
+public record AddTravellerRequest(
+    string TravellerName,
+    int? Age,
+    string? Gender,
+    string? Contact,
+    string? Type,
+    string? PickupLocation,
+    string? DropLocation,
+    string? PaymentStatus,
+    decimal? PaidAmount,
+    decimal? BalanceAmount,
+    string? FoodInfo,
+    string? CustomFieldsJson
 );
 
 public record UpdateTripStatusRequest(string Status);
@@ -170,4 +231,3 @@ public record PublicTripScheduleDto(
     string Activity,
     string? Location
 );
-

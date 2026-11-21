@@ -69,6 +69,10 @@ public class Trip : ITenantScoped
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // Dynamic custom fields
+    public string CustomFieldsJson { get; set; } = "{}";
+
+    public List<TripItineraryDay> Days { get; set; } = new();
     public List<TripItinerarySchedule> Schedules { get; set; } = new();
     public List<TripMember> Travellers { get; set; } = new();
     public List<TripTeamAssignment> TeamAssignments { get; set; } = new();
@@ -76,15 +80,34 @@ public class Trip : ITenantScoped
     public List<Payment> Payments { get; set; } = new();
 }
 
-public class TripItinerarySchedule : ITenantScoped
+public class TripItineraryDay : ITenantScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
     public Guid TripId { get; set; }
     public int DayNumber { get; set; } = 1;
+    public string Title { get; set; } = string.Empty;
+    public DateTime DayDate { get; set; }
+    public List<TripItinerarySchedule> Schedules { get; set; } = new();
+}
+
+public class TripItinerarySchedule : ITenantScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid TripId { get; set; }
+    public Guid? DayId { get; set; }
+    public int DayNumber { get; set; } = 1;
     public DateTime DayDate { get; set; }
     public string TimeString { get; set; } = "10:00 AM";
     public string Activity { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Origin { get; set; }
+    public string? Destination { get; set; }
+    public string ActivityType { get; set; } = "Sightseeing"; // Transit, Sightseeing, Meal, Activity, Accommodation, Leisure
+    public ScheduleStatus Status { get; set; } = ScheduleStatus.Scheduled;
+    public string? AssignedPersonResource { get; set; }
+    public string? Notes { get; set; }
     public string? Location { get; set; }
 }
 
@@ -95,7 +118,9 @@ public class TripMember : ITenantScoped
     public Guid TripId { get; set; }
     public Guid? MemberId { get; set; }
     public string TravellerName { get; set; } = string.Empty;
-    public string AgeGender { get; set; } = "28 / Male";
+    public string AgeGender { get; set; } = "28 / Female";
+    public int Age { get; set; } = 28;
+    public string Gender { get; set; } = "Female";
     public string Contact { get; set; } = string.Empty;
     public string Type { get; set; } = "Main"; // Main, Sub
     public string? PickupLocation { get; set; }
@@ -104,6 +129,7 @@ public class TripMember : ITenantScoped
     public decimal PaidAmount { get; set; }
     public decimal BalanceAmount { get; set; }
     public string FoodInfo { get; set; } = "Non-Veg"; // Veg, Non-Veg
+    public string CustomFieldsJson { get; set; } = "{}";
 }
 
 public class TripTeamAssignment : ITenantScoped
@@ -237,13 +263,19 @@ public class CustomFieldDefinition : ITenantScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
-    public string TargetEntity { get; set; } = "Member"; // Member, Trip, Resource
+    public string TargetEntity { get; set; } = "Trip"; // Module: Trip, Traveller, TeamMember, Vehicle, Hotel, Restaurant, Lodge, Activity
     public string FieldKey { get; set; } = string.Empty;
     public string FieldLabel { get; set; } = string.Empty;
-    public string FieldType { get; set; } = "text"; // text, date, number, select, boolean
+    public string FieldType { get; set; } = "text"; // text, textarea, number, currency, date, time, select, multiselect, boolean, email, phone, url
     public bool IsRequired { get; set; }
     public bool ShowInTable { get; set; }
     public string? OptionsJson { get; set; }
+    public string? DefaultValue { get; set; }
+    public int SortOrder { get; set; } = 0;
+    public bool IsArchived { get; set; } = false; // Safe lifecycle: Soft archive protects historical customer data!
+    public string? ValidationRulesJson { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class ActivityLog : ITenantScoped

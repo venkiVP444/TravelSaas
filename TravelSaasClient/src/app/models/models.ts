@@ -77,24 +77,46 @@ export interface TripDetail {
   publicSlug?: string;
   publishedAt?: string;
   createdAt: string;
+  customFieldsJson: string;
+  days: TripItineraryDay[];
   schedules: TripSchedule[];
   travellers: TripTraveller[];
   teamMembers: TripTeamMember[];
   resources: TripResource[];
+  assignedTeamMemberIds?: string[];
+  assignedResourceIds?: string[];
+}
+
+export interface TripItineraryDay {
+  id?: string;
+  dayNumber: number;
+  title: string;
+  dayDate: string;
+  schedules: TripSchedule[];
 }
 
 export interface TripSchedule {
   id?: string;
+  dayId?: string;
   dayNumber: number;
   dayDate: string;
   timeString: string;
   activity: string;
+  description?: string;
+  origin?: string;
+  destination?: string;
+  activityType?: string;
+  status?: string;
+  assignedPersonResource?: string;
+  notes?: string;
   location?: string;
 }
 
 export interface TripTraveller {
   id?: string;
   travellerName: string;
+  age?: number;
+  gender?: string;
   ageGender: string;
   contact: string;
   type: string;
@@ -104,6 +126,51 @@ export interface TripTraveller {
   paidAmount: number;
   balanceAmount: number;
   foodInfo: string;
+  customFieldsJson?: string;
+}
+
+export interface AddTravellerPayload {
+  travellerName: string;
+  age?: number;
+  gender?: string;
+  contact?: string;
+  type?: string;
+  pickupLocation?: string;
+  dropLocation?: string;
+  paymentStatus?: string;
+  paidAmount?: number;
+  balanceAmount?: number;
+  foodInfo?: string;
+  customFieldsJson?: string;
+}
+
+export interface CreateTripPayload {
+  tripCode?: string;
+  name: string;
+  description?: string;
+  thumbnailUrl?: string;
+  category: string;
+  origin: string;
+  destination: string;
+  via?: string;
+  startDateTime: string;
+  endDateTime: string;
+  duration: string;
+  totalSeats: number;
+  foodInfo: string;
+  pickupDrop: string;
+  adultPrice: number;
+  adultSpends: number;
+  adultMargin: number;
+  childPrice: number;
+  childSpends: number;
+  childMargin: number;
+  status?: string;
+  customFieldsJson?: string;
+  assignedMemberIds?: string[];
+  assignedResourceIds?: string[];
+  days?: any[];
+  schedules?: any[];
 }
 
 export interface TripTeamMember {
@@ -245,6 +312,10 @@ export interface CustomField {
   isRequired: boolean;
   showInTable: boolean;
   optionsJson?: string;
+  defaultValue?: string;
+  sortOrder?: number;
+  isArchived?: boolean;
+  validationRulesJson?: string;
 }
 
 export interface PublicTrip {
@@ -277,4 +348,3 @@ export interface PublicItineraryItem {
   activity: string;
   location?: string;
 }
-

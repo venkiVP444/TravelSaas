@@ -128,6 +128,36 @@ export class ApiService {
       .pipe(catchError(this.handleError));
   }
 
+  deleteTraveller(tripId: string, travellerId: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/trips/${tripId}/travellers/${travellerId}`, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  addItineraryDay(tripId: string, day: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/trips/${tripId}/days`, day, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  deleteItineraryDay(tripId: string, dayId: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/trips/${tripId}/days/${dayId}`, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  addSchedule(tripId: string, schedule: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/trips/${tripId}/schedules`, schedule, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  updateSchedule(tripId: string, scheduleId: string, schedule: any): Observable<any> {
+    return this.http.put(`${this.baseUrl}/trips/${tripId}/schedules/${scheduleId}`, schedule, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  deleteSchedule(tripId: string, scheduleId: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/trips/${tripId}/schedules/${scheduleId}`, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
   assignTeamMember(tripId: string, assignment: any): Observable<any> {
     return this.http.post(`${this.baseUrl}/trips/${tripId}/team`, assignment, { headers: this.getHeaders() })
       .pipe(catchError(this.handleError));
@@ -196,13 +226,15 @@ export class ApiService {
   }
 
   // Members
-  getMembers(params: { role?: string; search?: string; status?: string }): Observable<MemberItem[]> {
+  getMembers(params: { role?: string; search?: string; status?: string } = {}): Observable<MemberItem[]> {
     let httpParams = new HttpParams();
-    Object.entries(params).forEach(([key, val]) => {
-      if (val !== undefined && val !== null && val !== '') {
-        httpParams = httpParams.set(key, val.toString());
-      }
-    });
+    if (params) {
+      Object.entries(params).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          httpParams = httpParams.set(key, val.toString());
+        }
+      });
+    }
 
     return this.http.get<MemberItem[]>(`${this.baseUrl}/members`, {
       headers: this.getHeaders(),
@@ -248,13 +280,32 @@ export class ApiService {
   }
 
   // Custom Fields
-  getCustomFields(entity: string): Observable<CustomField[]> {
-    return this.http.get<CustomField[]>(`${this.baseUrl}/custom-fields?entity=${entity}`, { headers: this.getHeaders() })
+  getCustomFields(entity?: string, includeArchived = false): Observable<CustomField[]> {
+    let params = new HttpParams();
+    if (entity) params = params.set('entity', entity);
+    if (includeArchived) params = params.set('includeArchived', 'true');
+
+    return this.http.get<CustomField[]>(`${this.baseUrl}/custom-fields`, { headers: this.getHeaders(), params })
       .pipe(catchError(this.handleError));
   }
 
   createCustomField(payload: any): Observable<CustomField> {
     return this.http.post<CustomField>(`${this.baseUrl}/custom-fields`, payload, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  updateCustomField(id: string, payload: any): Observable<CustomField> {
+    return this.http.put<CustomField>(`${this.baseUrl}/custom-fields/${id}`, payload, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  archiveCustomField(id: string, archive = true): Observable<any> {
+    return this.http.put(`${this.baseUrl}/custom-fields/${id}/archive?archive=${archive}`, {}, { headers: this.getHeaders() })
+      .pipe(catchError(this.handleError));
+  }
+
+  reorderCustomFields(fieldIds: string[]): Observable<any> {
+    return this.http.post(`${this.baseUrl}/custom-fields/reorder`, { fieldIds }, { headers: this.getHeaders() })
       .pipe(catchError(this.handleError));
   }
 

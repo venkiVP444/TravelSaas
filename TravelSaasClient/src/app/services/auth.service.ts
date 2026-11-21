@@ -64,6 +64,10 @@ export class AuthService {
     localStorage.setItem(this.TENANT_KEY, JSON.stringify(tenant));
   }
 
+  setTenant(tenant: Tenant) {
+    this.switchTenant(tenant);
+  }
+
   logout() {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);

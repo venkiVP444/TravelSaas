@@ -15,7 +15,11 @@ using TravelSaas.Api.Services.Storage;
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Core Services & Proxy Forwarding
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddOpenApi();
 

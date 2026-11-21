@@ -50,3 +50,11 @@ public enum PaymentMode
     Card
 }
 
+public enum ScheduleStatus
+{
+    Scheduled,
+    InProgress,
+    Completed,
+    Delayed
+}
+
